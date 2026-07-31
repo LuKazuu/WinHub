@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-#WinHubRev2
+#R2
 set -euo pipefail
 TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
@@ -134,10 +134,6 @@ WRAPPER_USE_BCN_CACHE=0
 # HUD
 GALLIUM_HUD=simple,fps
 DXVK_HUD=fps
-
-# OTHER
-XDG_DATA_DIRS=\${TERMUX_PREFIX}/share:\${XDG_DATA_DIRS:-}
-XDG_CONFIG_DIRS=\${TERMUX_PREFIX}/etc/xdg:\${XDG_CONFIG_DIRS:-}
 INNER_EOF
 fi
 
@@ -190,6 +186,9 @@ source "\${SHARED_DIR}/desktop.txt"
 source "\${SHARED_DIR}/box64.txt"
 source "\${SHARED_DIR}/fexcore.txt"
 set +a
+
+export XDG_DATA_DIRS="\${TERMUX_PREFIX}/share:\${XDG_DATA_DIRS:-}"
+export XDG_CONFIG_DIRS="\${TERMUX_PREFIX}/etc/xdg:\${XDG_CONFIG_DIRS:-}"
 
 for var in WRAPPER_VK_VERSION WRAPPER_EXTENSION_BLACKLIST WRAPPER_VMEM_MAX_SIZE WRAPPER_RESOURCE_TYPE; do
     [ -n "\${!var}" ] || unset "\$var"
