@@ -1,4 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
+#WinHubRev2
 set -euo pipefail
 TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
@@ -8,29 +9,36 @@ HANGOVER_BASE="https://github.com/LuKazuu/TermuxHangoverWine/releases/download/$
 
 termux-setup-storage
 
-pkg update -y && pkg upgrade -y
-pkg install -y x11-repo tur-repo
-pkg update -y
-pkg install -y termux-x11-nightly xorg-xrandr pulseaudio xfce4 xfce4-terminal vlc-qt \
-    curl zstd tar unzip mesa mesa-vulkan-icd-freedreno vulkan-loader-generic libandroid-shmem \
-    libc++ libdrm libx11 libxcb libxshmfence libwayland vulkan-tools
+WORKDIR="$(mktemp -d)"
+cleanup() {
+    rm -rf "${WORKDIR}" 2>/dev/null || true
+    apt clean 2>/dev/null || true
+    pkg clean 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 
-WRAPPER_ARCHIVE="$(mktemp)"
+pkg install -y x11-repo
+pkg update -y && pkg upgrade -y
+pkg install -y termux-x11-nightly xorg-xrandr pulseaudio xfce4 xfce4-terminal zstd tar vulkan-loader-generic mesa mesa-vulkan-icd-freedreno
+
+TURNIP_WRAPPER_DEFAULT_DIR="${TERMUX_PREFIX}/var/lib/turnip-wrapper"
+
+WRAPPER_ARCHIVE="${WORKDIR}/wrapper.tzst"
 curl -fL --retry 3 --retry-all-errors -o "${WRAPPER_ARCHIVE}" "${WINHUB_RAW}/wrapper/pipetto/wrapper.tzst"
 zstd -dc "${WRAPPER_ARCHIVE}" | tar -x -C "${TERMUX_PREFIX}" --strip-components=1
-rm -f "${WRAPPER_ARCHIVE}"
 
-BCN_ARCHIVE="$(mktemp)"
-BCN_TMPDIR="$(mktemp -d)"
-curl -fL --retry 3 --retry-all-errors -o "${BCN_ARCHIVE}" "${WINHUB_RAW}/wrapper/pipetto/extra_libs.tzst"
-zstd -dc "${BCN_ARCHIVE}" | tar -x -C "${BCN_TMPDIR}" \
+EXTRA_LIBS_ARCHIVE="${WORKDIR}/extra_libs.tzst"
+EXTRA_LIBS_TMPDIR="${WORKDIR}/extra_libs"
+mkdir -p "${EXTRA_LIBS_TMPDIR}" "${TURNIP_WRAPPER_DEFAULT_DIR}" "${TERMUX_PREFIX}/share/vulkan/implicit_layer.d"
+curl -fL --retry 3 --retry-all-errors -o "${EXTRA_LIBS_ARCHIVE}" "${WINHUB_RAW}/wrapper/extra_libs.tzst"
+zstd -dc "${EXTRA_LIBS_ARCHIVE}" | tar -x -C "${EXTRA_LIBS_TMPDIR}" \
     usr/lib/libbcn_layer.so \
+    usr/lib/libvulkan_freedreno.so \
     usr/share/vulkan/implicit_layer.d/libbcn_layer.json
-mkdir -p "${TERMUX_PREFIX}/share/vulkan/implicit_layer.d"
-cp -f "${BCN_TMPDIR}/usr/lib/libbcn_layer.so" "${TERMUX_PREFIX}/lib/"
-cp -f "${BCN_TMPDIR}/usr/share/vulkan/implicit_layer.d/libbcn_layer.json" \
+cp -f "${EXTRA_LIBS_TMPDIR}/usr/lib/libbcn_layer.so" "${TERMUX_PREFIX}/lib/"
+cp -f "${EXTRA_LIBS_TMPDIR}/usr/lib/libvulkan_freedreno.so" "${TURNIP_WRAPPER_DEFAULT_DIR}/"
+cp -f "${EXTRA_LIBS_TMPDIR}/usr/share/vulkan/implicit_layer.d/libbcn_layer.json" \
     "${TERMUX_PREFIX}/share/vulkan/implicit_layer.d/"
-rm -rf "${BCN_TMPDIR}" "${BCN_ARCHIVE}"
 
 ln -sfn "libandroid-shmem.so" "${TERMUX_PREFIX}/lib/libandroid-sysvshm.so"
 
@@ -41,19 +49,22 @@ HANGOVER_DEBS=(
     "hangover-libwow64fex_11.9_aarch64.deb"
 )
 for deb in "${HANGOVER_DEBS[@]}"; do
-    curl -fLO --retry 3 --retry-all-errors "${HANGOVER_BASE}/${deb}"
+    curl -fL --retry 3 --retry-all-errors -o "${WORKDIR}/${deb}" "${HANGOVER_BASE}/${deb}"
 done
-apt install -y "${HANGOVER_DEBS[@]/#/./}"
-rm -f "${HANGOVER_DEBS[@]}"
+apt install -y "${HANGOVER_DEBS[@]/#/${WORKDIR}/}"
+
+LAYERS_DEFAULT_DIR="${TERMUX_PREFIX}/var/lib/layers-default"
+WINE_DIR_INSTALL="${TERMUX_PREFIX}/opt/hangover-wine/lib/wine/aarch64-windows"
+mkdir -p "${LAYERS_DEFAULT_DIR}"
+cp -f "${WINE_DIR_INSTALL}/libarm64ecfex.dll" "${WINE_DIR_INSTALL}/wowbox64.dll" "${WINE_DIR_INSTALL}/libwow64fex.dll" "${LAYERS_DEFAULT_DIR}/"
 
 for f in "${TERMUX_PREFIX}/opt/hangover-wine/bin/"*; do
     [ -e "$f" ] || continue
     ln -sf "$f" "${TERMUX_PREFIX}/bin/${f##*/}"
 done
 
-if [ ! -e "${TERMUX_PREFIX}/bin/wine.real" ]; then
-    mv "${TERMUX_PREFIX}/bin/wine" "${TERMUX_PREFIX}/bin/wine.real"
-fi
+ln -sf "${TERMUX_PREFIX}/opt/hangover-wine/bin/wine" "${TERMUX_PREFIX}/bin/wine.real"
+rm -f "${TERMUX_PREFIX}/bin/wine"
 
 cat > "${TERMUX_PREFIX}/bin/wine" << 'WEOF'
 #!/data/data/com.termux/files/usr/bin/bash
@@ -79,30 +90,34 @@ mkdir -p "\${LOG_DIR}"
 rm -f "\${LOG_DIR}/"*.log
 export WINE_LOGFILE="\${LOG_DIR}/wine.log"
 DESKTOP_LOGFILE="\${LOG_DIR}/desktop.log"
-: > "\${WINE_LOGFILE}"
-: > "\${DESKTOP_LOGFILE}"
 
 WRAPPER_CACHE_DIR="\${TERMUX_PREFIX}/var/cache/vulkan-wrapper"
-TURNIP_SHARED_DIR="\${SHARED_DIR}/turnip"
-TURNIP_RUNTIME_DIR="\${TERMUX_PREFIX}/var/lib/pipetto-turnip"
-mkdir -p "\${LAYERS_DIR}" "\${WRAPPER_CACHE_DIR}" "\${TURNIP_SHARED_DIR}" "\${TURNIP_RUNTIME_DIR}"
+TURNIP_WRAPPER_DIR="\${SHARED_DIR}/turnip/wrapper"
+TURNIP_TERMUX_DIR="\${SHARED_DIR}/turnip/termux"
+TURNIP_WRAPPER_DEFAULT="\${TERMUX_PREFIX}/var/lib/turnip-wrapper/libvulkan_freedreno.so"
+LAYERS_DEFAULT_DIR="\${TERMUX_PREFIX}/var/lib/layers-default"
+mkdir -p "\${LAYERS_DIR}" "\${WRAPPER_CACHE_DIR}" "\${TURNIP_WRAPPER_DIR}" "\${TURNIP_TERMUX_DIR}"
 mkdir -p "\${SHARED_DIR}/dxvk/system32" "\${SHARED_DIR}/dxvk/syswow64"
 mkdir -p "\${SHARED_DIR}/vkd3d/system32" "\${SHARED_DIR}/vkd3d/syswow64"
 
 if [ ! -f "\${SHARED_DIR}/desktop.txt" ]; then
     cat > "\${SHARED_DIR}/desktop.txt" << 'INNER_EOF'
+# BASIC
 WINEDEBUG=-all
-HODLL=libwow64fex.dll
+HODLL=libwow64fex.dll # libwow64fex.dll / wowbox64.dll
 LC_ALL=en_US.UTF-8
 WINEESYNC=1
 WINE_VMR7_GDI_FALLBACK=1
 WINE_DO_NOT_CREATE_DXGI_DEVICE_MANAGER=1
-WINEVMEMMAXSIZE=2048
-GPU_BACKEND=wrapper
-WRAPPER_DRIVER=system
-WRAPPER_BCN=0
-TURNIP_PACKAGE=none
-OPENGL_DRIVER=llvmpipe
+WINEVMEMMAXSIZE=4096
+PULSE_LATENCY_MSEC=60
+TZ=Asia/Jakarta
+
+# GPU
+GPU_BACKEND=wrapper # wrapper / termux
+WRAPPER_DRIVER=system # system / turnip
+WRAPPER_BCN=0 # 0 / 1 / 2
+OPENGL_DRIVER=llvmpipe # zink / llvmpipe
 MESA_NO_ERROR=1
 MESA_GL_VERSION_OVERRIDE=4.6
 MESA_GLES_VERSION_OVERRIDE=3.2
@@ -110,15 +125,19 @@ MESA_VK_WSI_PRESENT_MODE=mailbox
 ZINK_DESCRIPTORS=lazy
 ZINK_DEBUG=compact
 GALLIUM_THREAD=1
-GALLIUM_HUD=simple,fps
-DXVK_HUD=fps
-XDG_DATA_DIRS=${TERMUX_PREFIX}/share:${XDG_DATA_DIRS:-}
-XDG_CONFIG_DIRS=${TERMUX_PREFIX}/etc/xdg:${XDG_CONFIG_DIRS:-}
-WRAPPER_VK_VERSION=1.3
+WRAPPER_VK_VERSION=1.4
 WRAPPER_EXTENSION_BLACKLIST=none
-WRAPPER_VMEM_MAX_SIZE=2048
+WRAPPER_VMEM_MAX_SIZE=4096
 WRAPPER_RESOURCE_TYPE=auto
 WRAPPER_USE_BCN_CACHE=0
+
+# HUD
+GALLIUM_HUD=simple,fps
+DXVK_HUD=fps
+
+# OTHER
+XDG_DATA_DIRS=\${TERMUX_PREFIX}/share:\${XDG_DATA_DIRS:-}
+XDG_CONFIG_DIRS=\${TERMUX_PREFIX}/etc/xdg:\${XDG_CONFIG_DIRS:-}
 INNER_EOF
 fi
 
@@ -166,10 +185,6 @@ FEX_DYNAMICL1CACHE=0
 INNER_EOF
 fi
 
-if ! ls "\${LAYERS_DIR}/"*.dll > /dev/null 2>&1; then
-    cp "\${WINE_DIR}/libarm64ecfex.dll" "\${WINE_DIR}/wowbox64.dll" "\${WINE_DIR}/libwow64fex.dll" "\${LAYERS_DIR}/" > /dev/null 2>&1
-fi
-
 set -a
 source "\${SHARED_DIR}/desktop.txt"
 source "\${SHARED_DIR}/box64.txt"
@@ -185,11 +200,13 @@ case "\${OPENGL_DRIVER}" in
         export MESA_LOADER_DRIVER_OVERRIDE=zink
         export GALLIUM_DRIVER=zink
         unset LIBGL_ALWAYS_SOFTWARE
+        unset LIBGL_KOPPER_DISABLE
         ;;
     llvmpipe)
-        unset MESA_LOADER_DRIVER_OVERRIDE
+        export MESA_LOADER_DRIVER_OVERRIDE=swrast
         export GALLIUM_DRIVER=llvmpipe
         export LIBGL_ALWAYS_SOFTWARE=true
+        export LIBGL_KOPPER_DISABLE=true
         ;;
 esac
 
@@ -198,6 +215,17 @@ case "\${GPU_BACKEND}" in
         export VK_ICD_FILENAMES="\${TERMUX_PREFIX}/share/vulkan/icd.d/freedreno_icd.aarch64.json"
         unset VK_LAYER_PATH WRAPPER_LAYER_PATH WRAPPER_CACHE_PATH WRAPPER_EMULATE_BCN ENABLE_BCN_COMPUTE BCN_COMPUTE_AUTO USE_CPU_BCN
         unset ADRENOTOOLS_DRIVER_PATH ADRENOTOOLS_DRIVER_NAME ADRENOTOOLS_HOOKS_PATH ADRENOTOOLS_REDIRECT_DIR
+        TURNIP_TERMUX_DEFAULT="\${TERMUX_PREFIX}/var/lib/turnip-termux/libvulkan_freedreno.so"
+        TURNIP_SOURCE="\$(ls "\${TURNIP_TERMUX_DIR}/"*.so 2>/dev/null | head -n 1 || true)"
+        if [ -n "\${TURNIP_SOURCE}" ]; then
+            if [ ! -f "\${TURNIP_TERMUX_DEFAULT}" ]; then
+                mkdir -p "\$(dirname "\${TURNIP_TERMUX_DEFAULT}")"
+                cp -f "\${TERMUX_PREFIX}/lib/libvulkan_freedreno.so" "\${TURNIP_TERMUX_DEFAULT}"
+            fi
+            cp -f "\${TURNIP_SOURCE}" "\${TERMUX_PREFIX}/lib/libvulkan_freedreno.so"
+        elif [ -f "\${TURNIP_TERMUX_DEFAULT}" ]; then
+            cp -f "\${TURNIP_TERMUX_DEFAULT}" "\${TERMUX_PREFIX}/lib/libvulkan_freedreno.so"
+        fi
         ;;
     wrapper)
         export VK_ICD_FILENAMES="\${TERMUX_PREFIX}/share/vulkan/icd.d/wrapper_icd.aarch64.json"
@@ -225,23 +253,25 @@ case "\${GPU_BACKEND}" in
                 unset ADRENOTOOLS_DRIVER_PATH ADRENOTOOLS_DRIVER_NAME ADRENOTOOLS_HOOKS_PATH ADRENOTOOLS_REDIRECT_DIR
                 ;;
             turnip)
-                TURNIP_SOURCE="\${TURNIP_SHARED_DIR}/\${TURNIP_PACKAGE}"
-                TURNIP_ACTIVE_DIR="\${TURNIP_RUNTIME_DIR}/active"
-                if [ ! -f "\${TURNIP_ACTIVE_DIR}/meta.json" ] || [ "\${TURNIP_SOURCE}" -nt "\${TURNIP_ACTIVE_DIR}/meta.json" ]; then
-                    rm -rf "\${TURNIP_ACTIVE_DIR}"
-                    mkdir -p "\${TURNIP_ACTIVE_DIR}"
-                    unzip -q "\${TURNIP_SOURCE}" -d "\${TURNIP_ACTIVE_DIR}"
+                TURNIP_SOURCE="\$(ls "\${TURNIP_WRAPPER_DIR}/"*.so 2>/dev/null | head -n 1 || true)"
+                [ -z "\${TURNIP_SOURCE}" ] && [ -f "\${TURNIP_WRAPPER_DEFAULT}" ] && TURNIP_SOURCE="\${TURNIP_WRAPPER_DEFAULT}"
+                if [ -n "\${TURNIP_SOURCE}" ]; then
+                    export ADRENOTOOLS_DRIVER_PATH="\$(dirname "\${TURNIP_SOURCE}")/"
+                    export ADRENOTOOLS_DRIVER_NAME="\$(basename "\${TURNIP_SOURCE}")"
+                    export ADRENOTOOLS_HOOKS_PATH="\${TERMUX_PREFIX}/lib"
+                else
+                    unset ADRENOTOOLS_DRIVER_PATH ADRENOTOOLS_DRIVER_NAME ADRENOTOOLS_HOOKS_PATH ADRENOTOOLS_REDIRECT_DIR
                 fi
-                TURNIP_LIBRARY="\$(sed -n 's/.*"libraryName"[[:space:]]*:[[:space:]]*"\([^"\]*\)".*/\1/p' "\${TURNIP_ACTIVE_DIR}/meta.json" | head -n 1)"
-                export ADRENOTOOLS_DRIVER_PATH="\${TURNIP_ACTIVE_DIR}/"
-                export ADRENOTOOLS_DRIVER_NAME="\${TURNIP_LIBRARY}"
-                export ADRENOTOOLS_HOOKS_PATH="\${TERMUX_PREFIX}/lib"
                 ;;
         esac
         ;;
 esac
 
-cp -f "\${LAYERS_DIR}/"*.dll "\${WINE_DIR}/" > /dev/null 2>&1
+if ls "\${LAYERS_DIR}/"*.dll > /dev/null 2>&1; then
+    cp -f "\${LAYERS_DIR}/"*.dll "\${WINE_DIR}/" > /dev/null 2>&1
+else
+    cp -f "\${LAYERS_DEFAULT_DIR}/"*.dll "\${WINE_DIR}/" > /dev/null 2>&1
+fi
 
 pkill -9 -f "termux.x11" > /dev/null 2>&1
 pkill -9 xfce4-session > /dev/null 2>&1
@@ -290,7 +320,7 @@ else
 fi
 wineserver -w
 
-exec startxfce4 >> "\${DESKTOP_LOGFILE}" 2>&1
+exec taskset -c 4-7 startxfce4 >> "\${DESKTOP_LOGFILE}" 2>&1
 EOF
 chmod +x "${TERMUX_PREFIX}/bin/startx11"
 
@@ -334,5 +364,5 @@ EOF
 chmod +x ~/Desktop/winetaskmgr.desktop
 
 clear
-echo "Type This Command to Start XFCE4 Desktop and Wine:"
+echo "Type This Command to Start Desktop and Wine:"
 echo "startx11"
