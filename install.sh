@@ -4,7 +4,7 @@ set -euo pipefail
 TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
 WINHUB_RAW="https://raw.githubusercontent.com/LuKazuu/WinHub/main"
-HANGOVER_TAG="hangover-wine-11.9-r25"
+HANGOVER_TAG="hangover-wine-11.9-r27"
 HANGOVER_BASE="https://github.com/LuKazuu/TermuxHangoverWine/releases/download/${HANGOVER_TAG}"
 
 termux-setup-storage
