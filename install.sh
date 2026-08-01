@@ -51,7 +51,7 @@ HANGOVER_DEBS=(
 for deb in "${HANGOVER_DEBS[@]}"; do
     curl -fL --retry 3 --retry-all-errors -o "${WORKDIR}/${deb}" "${HANGOVER_BASE}/${deb}"
 done
-apt install -y "${HANGOVER_DEBS[@]/#/${WORKDIR}/}"
+apt install -y --allow-downgrades "${HANGOVER_DEBS[@]/#/${WORKDIR}/}"
 
 LAYERS_DEFAULT_DIR="${TERMUX_PREFIX}/var/lib/layers-default"
 WINE_DIR_INSTALL="${TERMUX_PREFIX}/opt/hangover-wine/lib/wine/aarch64-windows"
