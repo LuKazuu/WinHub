@@ -199,13 +199,11 @@ case "\${OPENGL_DRIVER}" in
         export MESA_LOADER_DRIVER_OVERRIDE=zink
         export GALLIUM_DRIVER=zink
         unset LIBGL_ALWAYS_SOFTWARE
-        unset LIBGL_KOPPER_DISABLE
         ;;
     llvmpipe)
         export MESA_LOADER_DRIVER_OVERRIDE=swrast
         export GALLIUM_DRIVER=llvmpipe
         export LIBGL_ALWAYS_SOFTWARE=true
-        export LIBGL_KOPPER_DISABLE=true
         ;;
 esac
 
