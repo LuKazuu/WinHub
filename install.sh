@@ -4,7 +4,7 @@ set -euo pipefail
 TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
 WINHUB_RAW="https://raw.githubusercontent.com/LuKazuu/WinHub/main"
-HANGOVER_TAG="hangover-wine-11.14-r12"
+HANGOVER_TAG="hangover-wine-11.14-r15"
 HANGOVER_BASE="https://github.com/LuKazuu/WinHubWine/releases/download/${HANGOVER_TAG}"
 
 termux-setup-storage
@@ -104,7 +104,6 @@ if [ ! -f "\${SHARED_DIR}/desktop.txt" ]; then
     cat > "\${SHARED_DIR}/desktop.txt" << 'INNER_EOF'
 # BASIC
 WINEDEBUG=-all
-# -all,+esync,+sync,+quartz,+strmbase,+gstreamer,+mfplat,+wmvcore,+devenum,+dmo,+win,+ddraw,+err,+warn,+fixme
 HODLL=libwow64fex.dll
 # libwow64fex.dll / wowbox64.dll
 LC_ALL=en_US.UTF-8
@@ -145,7 +144,6 @@ fi
 
 if [ ! -f "\${SHARED_DIR}/box64.txt" ]; then
     cat > "\${SHARED_DIR}/box64.txt" << 'INNER_EOF'
-BOX64_DYNAREC=1
 BOX64_DYNAREC_SAFEFLAGS=1
 BOX64_DYNAREC_FASTNAN=1
 BOX64_DYNAREC_FASTROUND=1
