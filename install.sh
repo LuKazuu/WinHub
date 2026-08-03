@@ -4,8 +4,8 @@ set -euo pipefail
 TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
 WINHUB_RAW="https://raw.githubusercontent.com/LuKazuu/WinHub/main"
-HANGOVER_TAG="hangover-wine-11.9-r27"
-HANGOVER_BASE="https://github.com/LuKazuu/TermuxHangoverWine/releases/download/${HANGOVER_TAG}"
+HANGOVER_TAG="hangover-wine-11.14-r12"
+HANGOVER_BASE="https://github.com/LuKazuu/WinHubWine/releases/download/${HANGOVER_TAG}"
 
 termux-setup-storage
 
@@ -43,10 +43,10 @@ cp -f "${EXTRA_LIBS_TMPDIR}/usr/share/vulkan/implicit_layer.d/libbcn_layer.json"
 ln -sfn "libandroid-shmem.so" "${TERMUX_PREFIX}/lib/libandroid-sysvshm.so"
 
 HANGOVER_DEBS=(
-    "hangover-wine_11.9_aarch64.deb"
-    "hangover-libarm64ecfex_11.9_aarch64.deb"
-    "hangover-wowbox64_11.9_aarch64.deb"
-    "hangover-libwow64fex_11.9_aarch64.deb"
+    "hangover-wine_11.14_aarch64.deb"
+    "hangover-libarm64ecfex_11.14_aarch64.deb"
+    "hangover-wowbox64_11.14_aarch64.deb"
+    "hangover-libwow64fex_11.14_aarch64.deb"
 )
 for deb in "${HANGOVER_DEBS[@]}"; do
     curl -fL --retry 3 --retry-all-errors -o "${WORKDIR}/${deb}" "${HANGOVER_BASE}/${deb}"
@@ -104,20 +104,26 @@ if [ ! -f "\${SHARED_DIR}/desktop.txt" ]; then
     cat > "\${SHARED_DIR}/desktop.txt" << 'INNER_EOF'
 # BASIC
 WINEDEBUG=-all
-HODLL=libwow64fex.dll # libwow64fex.dll / wowbox64.dll
+# -all,+esync,+sync,+quartz,+strmbase,+gstreamer,+mfplat,+wmvcore,+devenum,+dmo,+win,+ddraw,+err,+warn,+fixme
+HODLL=libwow64fex.dll
+# libwow64fex.dll / wowbox64.dll
 LC_ALL=en_US.UTF-8
 WINEESYNC=1
 WINE_VMR7_GDI_FALLBACK=1
 WINE_DO_NOT_CREATE_DXGI_DEVICE_MANAGER=1
 WINEVMEMMAXSIZE=4096
 PULSE_LATENCY_MSEC=60
-TZ=Asia/Jakarta
+TZ=Asia/Tokyo
 
 # GPU
-GPU_BACKEND=wrapper # wrapper / termux
-WRAPPER_DRIVER=system # system / turnip
-WRAPPER_BCN=0 # 0 / 1 / 2
-OPENGL_DRIVER=llvmpipe # zink / llvmpipe
+GPU_BACKEND=wrapper
+# wrapper / termux
+WRAPPER_DRIVER=system
+# system / turnip
+WRAPPER_BCN=0
+# 0 / 1 / 2
+OPENGL_DRIVER=llvmpipe
+# zink / llvmpipe
 MESA_NO_ERROR=1
 MESA_GL_VERSION_OVERRIDE=4.6
 MESA_GLES_VERSION_OVERRIDE=3.2
@@ -139,6 +145,7 @@ fi
 
 if [ ! -f "\${SHARED_DIR}/box64.txt" ]; then
     cat > "\${SHARED_DIR}/box64.txt" << 'INNER_EOF'
+BOX64_DYNAREC=1
 BOX64_DYNAREC_SAFEFLAGS=1
 BOX64_DYNAREC_FASTNAN=1
 BOX64_DYNAREC_FASTROUND=1
