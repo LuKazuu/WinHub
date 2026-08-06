@@ -1,10 +1,10 @@
 #!/data/data/com.termux/files/usr/bin/bash
-#R2
+#R3
 set -euo pipefail
 TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
 WINHUB_RAW="https://raw.githubusercontent.com/LuKazuu/WinHub/main"
-HANGOVER_TAG="hangover-wine-11.14-r15"
+HANGOVER_TAG="hangover-wine-11.14-r8"
 HANGOVER_BASE="https://github.com/LuKazuu/WinHubWine/releases/download/${HANGOVER_TAG}"
 
 termux-setup-storage
@@ -54,9 +54,9 @@ done
 apt install -y --allow-downgrades "${HANGOVER_DEBS[@]/#/${WORKDIR}/}"
 
 LAYERS_DEFAULT_DIR="${TERMUX_PREFIX}/var/lib/layers-default"
-WINE_DIR_INSTALL="${TERMUX_PREFIX}/opt/hangover-wine/lib/wine/aarch64-windows"
+WINE_DIR="${TERMUX_PREFIX}/opt/hangover-wine/lib/wine/aarch64-windows"
 mkdir -p "${LAYERS_DEFAULT_DIR}"
-cp -f "${WINE_DIR_INSTALL}/libarm64ecfex.dll" "${WINE_DIR_INSTALL}/wowbox64.dll" "${WINE_DIR_INSTALL}/libwow64fex.dll" "${LAYERS_DEFAULT_DIR}/"
+cp -f "${WINE_DIR}/libarm64ecfex.dll" "${WINE_DIR}/wowbox64.dll" "${WINE_DIR}/libwow64fex.dll" "${LAYERS_DEFAULT_DIR}/"
 
 for f in "${TERMUX_PREFIX}/opt/hangover-wine/bin/"*; do
     [ -e "$f" ] || continue
@@ -81,6 +81,7 @@ cat > "${TERMUX_PREFIX}/bin/startx11" << EOF
 
 TERMUX_PREFIX="${TERMUX_PREFIX}"
 WINE_DIR="\${TERMUX_PREFIX}/opt/hangover-wine/lib/wine/aarch64-windows"
+WINE_DIR_32="\${TERMUX_PREFIX}/opt/hangover-wine/lib/wine/i386-windows"
 SHARED_DIR=~/storage/shared/Termux
 LAYERS_DIR="\${SHARED_DIR}/layers"
 WINEPREFIX=~/.wine
@@ -94,11 +95,14 @@ DESKTOP_LOGFILE="\${LOG_DIR}/desktop.log"
 WRAPPER_CACHE_DIR="\${TERMUX_PREFIX}/var/cache/vulkan-wrapper"
 TURNIP_WRAPPER_DIR="\${SHARED_DIR}/turnip/wrapper"
 TURNIP_TERMUX_DIR="\${SHARED_DIR}/turnip/termux"
-TURNIP_WRAPPER_DEFAULT="\${TERMUX_PREFIX}/var/lib/turnip-wrapper/libvulkan_freedreno.so"
+TURNIP_WRAPPER_DEFAULT_DIR="\${TERMUX_PREFIX}/var/lib/turnip-wrapper"
+TURNIP_WRAPPER_DEFAULT="\${TURNIP_WRAPPER_DEFAULT_DIR}/libvulkan_freedreno.so"
 LAYERS_DEFAULT_DIR="\${TERMUX_PREFIX}/var/lib/layers-default"
+DLLS_DIR="\${SHARED_DIR}/dlls"
+MANIFEST_DIR="\${TERMUX_PREFIX}/var/lib/dll-manifest"
 mkdir -p "\${LAYERS_DIR}" "\${WRAPPER_CACHE_DIR}" "\${TURNIP_WRAPPER_DIR}" "\${TURNIP_TERMUX_DIR}"
-mkdir -p "\${SHARED_DIR}/dxvk/system32" "\${SHARED_DIR}/dxvk/syswow64"
-mkdir -p "\${SHARED_DIR}/vkd3d/system32" "\${SHARED_DIR}/vkd3d/syswow64"
+mkdir -p "\${DLLS_DIR}/system32" "\${DLLS_DIR}/syswow64"
+mkdir -p "\${MANIFEST_DIR}"
 
 if [ ! -f "\${SHARED_DIR}/desktop.txt" ]; then
     cat > "\${SHARED_DIR}/desktop.txt" << 'INNER_EOF'
@@ -178,12 +182,18 @@ FEX_MULTIBLOCK=1
 FEX_MAXINST=5000
 FEX_HOSTFEATURES=off
 FEX_SMALLTSCSCALE=1
-FEX_SMC_CHECKS=mtrack
+FEX_SMCCHECKS=mtrack
 FEX_VOLATILEMETADATA=1
 FEX_MONOHACKS=1
 FEX_HIDEHYPERVISORBIT=0
 FEX_DISABLEL2CACHE=0
 FEX_DYNAMICL1CACHE=0
+INNER_EOF
+fi
+
+if [ ! -f "\${SHARED_DIR}/override_dll.txt" ]; then
+    cat > "\${SHARED_DIR}/override_dll.txt" << 'INNER_EOF'
+version=n,b
 INNER_EOF
 fi
 
@@ -219,13 +229,13 @@ case "\${GPU_BACKEND}" in
         unset VK_LAYER_PATH WRAPPER_LAYER_PATH WRAPPER_CACHE_PATH WRAPPER_EMULATE_BCN ENABLE_BCN_COMPUTE BCN_COMPUTE_AUTO USE_CPU_BCN
         unset ADRENOTOOLS_DRIVER_PATH ADRENOTOOLS_DRIVER_NAME ADRENOTOOLS_HOOKS_PATH ADRENOTOOLS_REDIRECT_DIR
         TURNIP_TERMUX_DEFAULT="\${TERMUX_PREFIX}/var/lib/turnip-termux/libvulkan_freedreno.so"
-        TURNIP_SOURCE="\$(ls "\${TURNIP_TERMUX_DIR}/"*.so 2>/dev/null | head -n 1 || true)"
-        if [ -n "\${TURNIP_SOURCE}" ]; then
+        TURNIP_SOURCE_TERMUX="\$(ls "\${TURNIP_TERMUX_DIR}/"*.so 2>/dev/null | head -n 1 || true)"
+        if [ -n "\${TURNIP_SOURCE_TERMUX}" ]; then
             if [ ! -f "\${TURNIP_TERMUX_DEFAULT}" ]; then
                 mkdir -p "\$(dirname "\${TURNIP_TERMUX_DEFAULT}")"
                 cp -f "\${TERMUX_PREFIX}/lib/libvulkan_freedreno.so" "\${TURNIP_TERMUX_DEFAULT}"
             fi
-            cp -f "\${TURNIP_SOURCE}" "\${TERMUX_PREFIX}/lib/libvulkan_freedreno.so"
+            cp -f "\${TURNIP_SOURCE_TERMUX}" "\${TERMUX_PREFIX}/lib/libvulkan_freedreno.so"
         elif [ -f "\${TURNIP_TERMUX_DEFAULT}" ]; then
             cp -f "\${TURNIP_TERMUX_DEFAULT}" "\${TERMUX_PREFIX}/lib/libvulkan_freedreno.so"
         fi
@@ -234,7 +244,7 @@ case "\${GPU_BACKEND}" in
         export VK_ICD_FILENAMES="\${TERMUX_PREFIX}/share/vulkan/icd.d/wrapper_icd.aarch64.json"
         export VK_LAYER_PATH="\${TERMUX_PREFIX}/share/vulkan/implicit_layer.d:\${TERMUX_PREFIX}/share/vulkan/explicit_layer.d"
         export WRAPPER_LAYER_PATH="\${TERMUX_PREFIX}/lib"
-        export WRAPPER_CACHE_PATH="\${TERMUX_PREFIX}/var/cache/vulkan-wrapper"
+        export WRAPPER_CACHE_PATH="\${WRAPPER_CACHE_DIR}"
         case "\${WRAPPER_BCN}" in
             0)
                 unset WRAPPER_EMULATE_BCN ENABLE_BCN_COMPUTE BCN_COMPUTE_AUTO USE_CPU_BCN
@@ -256,11 +266,11 @@ case "\${GPU_BACKEND}" in
                 unset ADRENOTOOLS_DRIVER_PATH ADRENOTOOLS_DRIVER_NAME ADRENOTOOLS_HOOKS_PATH ADRENOTOOLS_REDIRECT_DIR
                 ;;
             turnip)
-                TURNIP_SOURCE="\$(ls "\${TURNIP_WRAPPER_DIR}/"*.so 2>/dev/null | head -n 1 || true)"
-                [ -z "\${TURNIP_SOURCE}" ] && [ -f "\${TURNIP_WRAPPER_DEFAULT}" ] && TURNIP_SOURCE="\${TURNIP_WRAPPER_DEFAULT}"
-                if [ -n "\${TURNIP_SOURCE}" ]; then
-                    export ADRENOTOOLS_DRIVER_PATH="\$(dirname "\${TURNIP_SOURCE}")/"
-                    export ADRENOTOOLS_DRIVER_NAME="\$(basename "\${TURNIP_SOURCE}")"
+                TURNIP_SOURCE_WRAPPER="\$(ls "\${TURNIP_WRAPPER_DIR}/"*.so 2>/dev/null | head -n 1 || true)"
+                [ -z "\${TURNIP_SOURCE_WRAPPER}" ] && [ -f "\${TURNIP_WRAPPER_DEFAULT}" ] && TURNIP_SOURCE_WRAPPER="\${TURNIP_WRAPPER_DEFAULT}"
+                if [ -n "\${TURNIP_SOURCE_WRAPPER}" ]; then
+                    export ADRENOTOOLS_DRIVER_PATH="\$(dirname "\${TURNIP_SOURCE_WRAPPER}")/"
+                    export ADRENOTOOLS_DRIVER_NAME="\$(basename "\${TURNIP_SOURCE_WRAPPER}")"
                     export ADRENOTOOLS_HOOKS_PATH="\${TERMUX_PREFIX}/lib"
                 else
                     unset ADRENOTOOLS_DRIVER_PATH ADRENOTOOLS_DRIVER_NAME ADRENOTOOLS_HOOKS_PATH ADRENOTOOLS_REDIRECT_DIR
@@ -297,31 +307,58 @@ if [ ! -d "\${WINEPREFIX}/drive_c/windows/system32" ]; then
     wineserver -w
 fi
 
-HAS_CUSTOM_DX=0
-if ls "\${SHARED_DIR}/dxvk/"*/*.dll > /dev/null 2>&1 || ls "\${SHARED_DIR}/vkd3d/"*/*.dll > /dev/null 2>&1; then
-    HAS_CUSTOM_DX=1
+declare -A DLL_OVERRIDES_MAP
+
+if [ -f "\${SHARED_DIR}/override_dll.txt" ]; then
+    while IFS='=' read -r name mode || [ -n "\$name" ]; do
+        name="\${name%%#*}"
+        name="\${name// /}"
+        mode="\${mode// /}"
+        [ -n "\$name" ] && [ -n "\$mode" ] && DLL_OVERRIDES_MAP["\$mode"]+="\${name},"
+    done < "\${SHARED_DIR}/override_dll.txt"
 fi
 
-if [ "\$HAS_CUSTOM_DX" -eq 0 ]; then
-    for dll in d3d8 d3d9 d3d10core d3d11 dxgi d3d12 d3d12core; do
-        wine reg delete "HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides" /v "\$dll" /f > /dev/null 2>&1
+sync_dll_arch() {
+    local arch="\$1" source_dir="\$2" dll_path dll_name target manifest prev
+    declare -A found=()
+
+    for dll_path in "\${DLLS_DIR}/\${arch}/"*.dll; do
+        [ -f "\$dll_path" ] && found["\$(basename "\$dll_path")"]="\$dll_path"
     done
-else
-    for arch in "system32" "syswow64"; do
-        for fw in "dxvk" "vkd3d"; do
-            if [ -d "\${SHARED_DIR}/\${fw}/\${arch}" ]; then
-                for dll_path in "\${SHARED_DIR}/\${fw}/\${arch}/"*.dll; do
-                    if [ -f "\$dll_path" ]; then
-                        dll_name=\$(basename "\$dll_path")
-                        cp -f "\$dll_path" "\${WINEPREFIX}/drive_c/windows/\${arch}/" > /dev/null 2>&1
-                        wine reg add "HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides" /v "\${dll_name%.*}" /t REG_SZ /d "native,builtin" /f > /dev/null 2>&1
-                    fi
-                done
-            fi
-        done
+
+    manifest="\${MANIFEST_DIR}/\${arch}.list"
+    prev=""
+    [ -f "\$manifest" ] && prev="\$(cat "\$manifest")"
+
+    for dll_name in "\${!found[@]}"; do
+        target="\${WINEPREFIX}/drive_c/windows/\${arch}/\${dll_name}"
+        cp -f "\${found[\$dll_name]}" "\$target" 2>/dev/null
+        DLL_OVERRIDES_MAP["n,b"]+="\${dll_name%.*},"
     done
-fi
-wineserver -w
+
+    while IFS= read -r dll_name; do
+        [ -n "\$dll_name" ] && [ -z "\${found[\$dll_name]:-}" ] || continue
+        target="\${WINEPREFIX}/drive_c/windows/\${arch}/\${dll_name}"
+        if [ -f "\${source_dir}/\${dll_name}" ]; then
+            cp -f "\${source_dir}/\${dll_name}" "\$target" 2>/dev/null
+        else
+            rm -f "\$target" 2>/dev/null
+        fi
+    done <<< "\$prev"
+
+    printf '%s\n' "\${!found[@]}" > "\$manifest"
+}
+
+sync_dll_arch system32 "\${WINE_DIR}"
+sync_dll_arch syswow64 "\${WINE_DIR_32}"
+
+WINEDLLOVERRIDES=""
+for mode in "\${!DLL_OVERRIDES_MAP[@]}"; do
+    names="\${DLL_OVERRIDES_MAP[\$mode]%,}"
+    [ -z "\$names" ] && continue
+    WINEDLLOVERRIDES+="\${names}=\${mode};"
+done
+export WINEDLLOVERRIDES="\${WINEDLLOVERRIDES%;}"
 
 exec taskset -c 4-7 startxfce4 >> "\${DESKTOP_LOGFILE}" 2>&1
 EOF
