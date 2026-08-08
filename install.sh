@@ -1,10 +1,10 @@
 #!/data/data/com.termux/files/usr/bin/bash
-#R3
+#REVISION4
 set -euo pipefail
 TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
 WINHUB_RAW="https://raw.githubusercontent.com/LuKazuu/WinHub/main"
-HANGOVER_TAG="hangover-wine-11.14-r8"
+HANGOVER_TAG="hangover-wine-11.14-r10"
 HANGOVER_BASE="https://github.com/LuKazuu/WinHubWine/releases/download/${HANGOVER_TAG}"
 
 termux-setup-storage
@@ -12,10 +12,9 @@ termux-setup-storage
 WORKDIR="$(mktemp -d)"
 cleanup() {
     rm -rf "${WORKDIR}" 2>/dev/null || true
-    apt clean 2>/dev/null || true
     pkg clean 2>/dev/null || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
 
 pkg install -y x11-repo
 pkg update -y && pkg upgrade -y
@@ -36,9 +35,8 @@ zstd -dc "${EXTRA_LIBS_ARCHIVE}" | tar -x -C "${EXTRA_LIBS_TMPDIR}" \
     usr/lib/libvulkan_freedreno.so \
     usr/share/vulkan/implicit_layer.d/libbcn_layer.json
 cp -f "${EXTRA_LIBS_TMPDIR}/usr/lib/libbcn_layer.so" "${TERMUX_PREFIX}/lib/"
-cp -f "${EXTRA_LIBS_TMPDIR}/usr/lib/libvulkan_freedreno.so" "${TURNIP_WRAPPER_DEFAULT_DIR}/"
-cp -f "${EXTRA_LIBS_TMPDIR}/usr/share/vulkan/implicit_layer.d/libbcn_layer.json" \
-    "${TERMUX_PREFIX}/share/vulkan/implicit_layer.d/"
+cp -f "${EXTRA_LIBS_TMPDIR}/usr/lib/libvulkan_freedreno.so" "${TURNIP_WRAPPER_DEFAULT_DIR}/libvulkan_freedreno.so"
+cp -f "${EXTRA_LIBS_TMPDIR}/usr/share/vulkan/implicit_layer.d/libbcn_layer.json" "${TERMUX_PREFIX}/share/vulkan/implicit_layer.d/"
 
 ln -sfn "libandroid-shmem.so" "${TERMUX_PREFIX}/lib/libandroid-sysvshm.so"
 
@@ -60,11 +58,10 @@ cp -f "${WINE_DIR}/libarm64ecfex.dll" "${WINE_DIR}/wowbox64.dll" "${WINE_DIR}/li
 
 for f in "${TERMUX_PREFIX}/opt/hangover-wine/bin/"*; do
     [ -e "$f" ] || continue
+    [ "${f##*/}" = "wine" ] && continue
     ln -sf "$f" "${TERMUX_PREFIX}/bin/${f##*/}"
 done
-
 ln -sf "${TERMUX_PREFIX}/opt/hangover-wine/bin/wine" "${TERMUX_PREFIX}/bin/wine.real"
-rm -f "${TERMUX_PREFIX}/bin/wine"
 
 cat > "${TERMUX_PREFIX}/bin/wine" << 'WEOF'
 #!/data/data/com.termux/files/usr/bin/bash
@@ -77,7 +74,7 @@ WEOF
 chmod +x "${TERMUX_PREFIX}/bin/wine"
 
 cat > "${TERMUX_PREFIX}/bin/startx11" << EOF
-#!/${TERMUX_PREFIX}/bin/bash
+#!${TERMUX_PREFIX}/bin/bash
 
 TERMUX_PREFIX="${TERMUX_PREFIX}"
 WINE_DIR="\${TERMUX_PREFIX}/opt/hangover-wine/lib/wine/aarch64-windows"
@@ -117,16 +114,20 @@ WINE_DO_NOT_CREATE_DXGI_DEVICE_MANAGER=1
 WINEVMEMMAXSIZE=4096
 PULSE_LATENCY_MSEC=60
 TZ=Asia/Tokyo
+WINESERVICES=1
+# 0 / 1
+CPU_TASKSET=all
+# all / 0-3 / 4-7
 
 # GPU
 GPU_BACKEND=wrapper
 # wrapper / termux
 WRAPPER_DRIVER=system
 # system / turnip
-WRAPPER_BCN=0
-# 0 / 1 / 2
 OPENGL_DRIVER=llvmpipe
 # zink / llvmpipe
+WRAPPER_BCN=0
+# 0 / 1 / 2
 MESA_NO_ERROR=1
 MESA_GL_VERSION_OVERRIDE=4.6
 MESA_GLES_VERSION_OVERRIDE=3.2
@@ -267,7 +268,16 @@ case "\${GPU_BACKEND}" in
                 ;;
             turnip)
                 TURNIP_SOURCE_WRAPPER="\$(ls "\${TURNIP_WRAPPER_DIR}/"*.so 2>/dev/null | head -n 1 || true)"
-                [ -z "\${TURNIP_SOURCE_WRAPPER}" ] && [ -f "\${TURNIP_WRAPPER_DEFAULT}" ] && TURNIP_SOURCE_WRAPPER="\${TURNIP_WRAPPER_DEFAULT}"
+                if [ -n "\${TURNIP_SOURCE_WRAPPER}" ]; then
+                    TURNIP_WRAPPER_INTERNAL_DIR="\${TURNIP_WRAPPER_DEFAULT_DIR}/custom"
+                    mkdir -p "\${TURNIP_WRAPPER_INTERNAL_DIR}"
+                    find "\${TURNIP_WRAPPER_INTERNAL_DIR}" -maxdepth 1 -type f -name '*.so' -delete
+                    TURNIP_INTERNAL_COPY="\${TURNIP_WRAPPER_INTERNAL_DIR}/\$(basename "\${TURNIP_SOURCE_WRAPPER}")"
+                    cp -f "\${TURNIP_SOURCE_WRAPPER}" "\${TURNIP_INTERNAL_COPY}"
+                    TURNIP_SOURCE_WRAPPER="\${TURNIP_INTERNAL_COPY}"
+                elif [ -f "\${TURNIP_WRAPPER_DEFAULT}" ]; then
+                    TURNIP_SOURCE_WRAPPER="\${TURNIP_WRAPPER_DEFAULT}"
+                fi
                 if [ -n "\${TURNIP_SOURCE_WRAPPER}" ]; then
                     export ADRENOTOOLS_DRIVER_PATH="\$(dirname "\${TURNIP_SOURCE_WRAPPER}")/"
                     export ADRENOTOOLS_DRIVER_NAME="\$(basename "\${TURNIP_SOURCE_WRAPPER}")"
@@ -303,23 +313,27 @@ sleep 2
 export DISPLAY=:0
 
 if [ ! -d "\${WINEPREFIX}/drive_c/windows/system32" ]; then
-    wine wineboot -u > /dev/null 2>&1
+    wine wineboot -u
     wineserver -w
 fi
 
 declare -A DLL_OVERRIDES_MAP
+declare -A DLL_USER_NAMES
 
 if [ -f "\${SHARED_DIR}/override_dll.txt" ]; then
     while IFS='=' read -r name mode || [ -n "\$name" ]; do
         name="\${name%%#*}"
         name="\${name// /}"
         mode="\${mode// /}"
-        [ -n "\$name" ] && [ -n "\$mode" ] && DLL_OVERRIDES_MAP["\$mode"]+="\${name},"
+        [ -n "\$name" ] && [ -n "\$mode" ] && {
+            DLL_OVERRIDES_MAP["\$mode"]+="\${name},"
+            DLL_USER_NAMES["\$name"]=1
+        }
     done < "\${SHARED_DIR}/override_dll.txt"
 fi
 
 sync_dll_arch() {
-    local arch="\$1" source_dir="\$2" dll_path dll_name target manifest prev
+    local arch="\$1" source_dir="\$2" dll_path dll_name base_name target manifest prev
     declare -A found=()
 
     for dll_path in "\${DLLS_DIR}/\${arch}/"*.dll; do
@@ -331,9 +345,10 @@ sync_dll_arch() {
     [ -f "\$manifest" ] && prev="\$(cat "\$manifest")"
 
     for dll_name in "\${!found[@]}"; do
+        base_name="\${dll_name%.*}"
         target="\${WINEPREFIX}/drive_c/windows/\${arch}/\${dll_name}"
         cp -f "\${found[\$dll_name]}" "\$target" 2>/dev/null
-        DLL_OVERRIDES_MAP["n,b"]+="\${dll_name%.*},"
+        [ -z "\${DLL_USER_NAMES[\$base_name]:-}" ] && DLL_OVERRIDES_MAP["n,b"]+="\${base_name},"
     done
 
     while IFS= read -r dll_name; do
@@ -360,9 +375,28 @@ for mode in "\${!DLL_OVERRIDES_MAP[@]}"; do
 done
 export WINEDLLOVERRIDES="\${WINEDLLOVERRIDES%;}"
 
-exec taskset -c 4-7 startxfce4 >> "\${DESKTOP_LOGFILE}" 2>&1
+if [ "\${WINESERVICES:-0}" = "0" ]; then
+    if [ -n "\${WINEDLLOVERRIDES}" ]; then
+        export WINEDLLOVERRIDES="\${WINEDLLOVERRIDES};services.exe=d"
+    else
+        export WINEDLLOVERRIDES="services.exe=d"
+    fi
+    wineserver -k > /dev/null 2>&1 || true
+fi
+
+if [ "\${CPU_TASKSET:-all}" = "all" ]; then
+    exec startxfce4 >> "\${DESKTOP_LOGFILE}" 2>&1
+else
+    exec taskset -c "\${CPU_TASKSET}" startxfce4 >> "\${DESKTOP_LOGFILE}" 2>&1
+fi
 EOF
 chmod +x "${TERMUX_PREFIX}/bin/startx11"
+
+cat > "${TERMUX_PREFIX}/bin/winlaunch" << 'WEOF'
+#!/data/data/com.termux/files/usr/bin/bash
+wine start /Unix "$1"
+WEOF
+chmod +x "${TERMUX_PREFIX}/bin/winlaunch"
 
 mkdir -p ~/Desktop ~/.local/share/applications ~/.config
 
@@ -370,7 +404,7 @@ cat > ~/.local/share/applications/wine.desktop << EOF
 [Desktop Entry]
 Type=Application
 Name=Wine
-Exec=wine start /Unix %f
+Exec=winlaunch %f
 MimeType=application/x-ms-dos-executable;application/x-msi;application/x-bat;application/x-cmd;
 NoDisplay=true
 EOF
